@@ -4,20 +4,20 @@ import asyncio
 import logging
 import os
 import ssl
-import sys
 import time
 
 import websockets
 
 from protocol import binary_protocol
-from protocol.encode_decode import decode_message, encode_message
 from protocol.binary_protocol import PROTOCOL_VERSION, CMD_PING, CMD_PONG
+from protocol.encode_decode import decode_message, encode_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("websocket-ipc-server")
 
 # Создаём экземпляр бинарного протокола (версия 1, команды CMD_PING/CMD_PONG)
 BINARY_PROTOCOL = binary_protocol.create_default_protocol()
+
 
 async def ipc_handler(websocket):
     logger.info(f"Новое соединение: {websocket.remote_address}")
@@ -87,10 +87,31 @@ async def main(host="0.0.0.0", port=8765):
         await asyncio.Future()
 
 
+def get_script_dir(follow_symlinks=True):
+    """
+    This function returns the correct script path only if defined in the script's root directory.
+    """
+    from os import path as ospath
+    import sys
+    import inspect
+
+    if getattr(sys, 'frozen', False):  # py2exe, PyInstaller, cx_Freeze
+        path = ospath.abspath(sys.executable)
+    else:
+        path = inspect.getabsfile(get_script_dir)
+
+    if follow_symlinks: path = ospath.realpath(path)
+
+    path = ospath.dirname(path)
+    if ospath.basename(path) == 'tools':
+        path = ospath.dirname(path)
+
+    return path
+
+
 if __name__ == "__main__":
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if root not in sys.path:
-        sys.path.insert(0, root)
+    os.chdir(get_script_dir())
+    print(get_script_dir())
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
