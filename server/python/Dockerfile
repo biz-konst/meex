@@ -6,14 +6,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем ВЕСЬ проект (сохраняя структуру папок)
+# Копируем ВЕСЬ проект (сохраняя структуру)
 COPY . /app
 
-# Добавляем корень проекта в PYTHONPATH
+# ЯВНО копируем сертификаты в корень /app (туда, где их ищет код)
+COPY server.crt server.key /app/
+
 ENV PYTHONPATH=/app
 
-# Открываем порт (в твоём коде используется 8765)
 EXPOSE 8765
 
-# Запускаем серверный скрипт (не модуль!)
 CMD ["python", "server.py"]
