@@ -1,53 +1,97 @@
 #!/usr/bin/env python3
-import asyncio
-import websockets
 import argparse
+import asyncio
 import logging
-import json
+import os
+import ssl
+import sys
+import time
+
+import websockets
+
+from protocol import binary_protocol
+from protocol.encode_decode import decode_message, encode_message
+from protocol.binary_protocol import PROTOCOL_VERSION, CMD_PING, CMD_PONG
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("websocket-ipc-server")
 
-CMD_PING = 1
-CMD_PONG = 2
+# Создаём экземпляр бинарного протокола (версия 1, команды CMD_PING/CMD_PONG)
+BINARY_PROTOCOL = binary_protocol.create_default_protocol()
 
 async def ipc_handler(websocket):
     logger.info(f"Новое соединение: {websocket.remote_address}")
     try:
         async for raw in websocket:
-            logger.debug(f"Получено: {raw}")
-            try:
-                msg = json.loads(raw)
-                req_id = msg.get("reqId")
-                cmd = msg.get("cmd")
-                data = msg.get("data")
+            use_binary = not isinstance(raw, str)
+            msg = decode_message(raw, use_binary, BINARY_PROTOCOL, logger)
+            if msg is None:
+                continue
 
-                if cmd == CMD_PING:
-                    logger.info(f"PING reqId={req_id}, data={data}")
-                    response = {
-                        "reqId": req_id,
-                        "cmd": CMD_PONG,
-                        "data": data
-                    }
-                    await websocket.send(json.dumps(response))
-                    logger.debug(f"PONG отправлен: {response}")
-                else:
-                    logger.warning(f"Неизвестная команда: {cmd}")
-                    await websocket.send(json.dumps({"error": "unknown cmd"}))
-            except json.JSONDecodeError as e:
-                logger.error(f"Ошибка JSON: {e}")
-                await websocket.send(json.dumps({"error": "invalid json"}))
+            if msg.get("v") != PROTOCOL_VERSION:
+                continue
+
+            if msg.get("c") != CMD_PING:
+                continue
+
+            dto = msg.get("d") or {}
+
+            pong_delay = dto.get("pong")
+            if pong_delay is not None and pong_delay < 0:
+                continue
+
+            req_id = dto.get("reqId")
+            timestamp = dto.get("ts")
+            received_time = int(time.time() * 1000) if timestamp is not None else None
+
+            delay_ms = pong_delay if pong_delay and pong_delay > 0 else 0
+
+            async def send_pong(delay, req_id, timestamp, received_time):
+                try:
+                    if delay > 0:
+                        await asyncio.sleep(delay / 1000.0)
+
+                    response = {"v": PROTOCOL_VERSION, "c": CMD_PONG}
+                    dto = {}
+                    if req_id:
+                        dto["replyTo"] = req_id
+                    if timestamp is not None:
+                        dto["ts"] = [timestamp, received_time]
+
+                    if dto:
+                        response["d"] = dto
+
+                    await websocket.send(encode_message(response, use_binary, BINARY_PROTOCOL, logger))
+                except Exception:
+                    pass
+
+            asyncio.create_task(send_pong(delay_ms, req_id, timestamp, received_time))
+
     except websockets.exceptions.ConnectionClosed:
         logger.info("Соединение закрыто")
     except Exception as e:
         logger.error(f"Ошибка: {e}")
 
+
 async def main(host="0.0.0.0", port=8765):
-    logger.info(f"Запуск сервера на {host}:{port}")
-    async with websockets.serve(ipc_handler, host, port, ping_interval=None, ping_timeout=None):
+    # Правильный путь: на две папки выше
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cert_path = os.path.join(base_dir, "server.crt")
+    key_path = os.path.join(base_dir, "server.key")
+
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+
+    logger.info(f"Запуск WSS сервера на {host}:{port}")
+    async with websockets.serve(ipc_handler, host, port, ssl=ssl_context, ping_interval=None, ping_timeout=None):
         await asyncio.Future()
 
+
 if __name__ == "__main__":
+    root = os.path.dirname(os.path.abspath(__file__))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
