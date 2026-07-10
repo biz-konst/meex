@@ -77,6 +77,7 @@ async def main(host="0.0.0.0", port=8765):
     # Правильный путь: на две папки выше
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cert_path = os.path.join(base_dir, "server.crt")
+    print(cert_path)
     key_path = os.path.join(base_dir, "server.key")
 
     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
