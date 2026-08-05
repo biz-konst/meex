@@ -326,9 +326,10 @@ def generate_test_cases():
     test_cases.append((56, data56))
 
     # --- Команда INFO (код 0) с сериализованным протоколом ---
-    proto = create_test_protocol()
-    info_data = serialize_protocol(proto)
-    test_cases.append((CMD_INFO, info_data))  # CMD_INFO = 0
+    # proto = create_test_protocol()
+    # info_data = serialize_protocol(proto)
+    # test_cases.append((CMD_INFO, info_data))  # CMD_INFO = 0
+    test_cases.append((CMD_INFO, None))  # CMD_INFO = 0
 
     return test_cases
 
@@ -368,6 +369,7 @@ def run_local_test(use_binary=False):
                     return False
                 # Восстанавливаем протокол из полученных данных
                 recovered_commands = unpack_info(received_data)
+                expected_data = serialize_protocol(proto)
                 # Сравниваем с исходным протоколом
                 try:
                     compare_values(expected_data, recovered_commands)
@@ -431,6 +433,7 @@ async def run_server_test(uri, use_binary=False):
                         return False
                     # Восстанавливаем протокол из полученных данных
                     recovered_commands = unpack_info(received_data)
+                    expected_data = serialize_protocol(proto)
                     # Сравниваем с исходным протоколом
                     try:
                         compare_values(expected_data, recovered_commands)
